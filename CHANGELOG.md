@@ -3,6 +3,19 @@
 All notable changes to Reasonix. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.53.2] — 2026-05-27
+
+**TUI crash fix — `useBoxMetrics` no longer trips React's max-update-depth.**
+The hook ran `useEffect` with no dep array and called `setSize` inside,
+so any Box whose content shape depended on its own measurement could
+oscillate within a single React commit batch and crash with "Maximum
+update depth exceeded" on chat startup (reported in #1986
+follow-up). Measurement is now deferred off the commit batch via
+`setTimeout(0)` — each measure starts a fresh root update instead of
+chaining inside the depth counter. Oscillating call sites still don't
+converge to a single value (the underlying anti-pattern in the caller
+remains), but the user no longer sees a crash.
+
 ## [0.53.1] — 2026-05-27
 
 **Install fix — `npx reasonix` no longer crashes on `EUNSUPPORTEDPROTOCOL`.**

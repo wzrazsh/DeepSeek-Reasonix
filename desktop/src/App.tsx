@@ -1385,6 +1385,13 @@ function TabRuntime({
     queuedSends: [],
     retryNonce: 0,
   });
+  // Refs mirroring reducer state for the stable keyboard handler below.
+  const pendingConfirmsRef = useRef(state.pendingConfirms);
+  pendingConfirmsRef.current = state.pendingConfirms;
+  const pendingPathAccessRef = useRef(state.pendingPathAccess);
+  pendingPathAccessRef.current = state.pendingPathAccess;
+  const busyRef = useRef(state.busy);
+  busyRef.current = state.busy;
   useLang();
   useDisableTextAssist();
   const [draft, setDraft] = useState("");
@@ -1402,6 +1409,18 @@ function TabRuntime({
   const [settingsPage, setSettingsPage] = useState<SettingsPageId>("general");
   const [jobsOpen, setJobsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  // Refs mirroring state/methods used by the keyboard handler. Keeps the
+  // keydown listener registration stable so state changes (pendingConfirms,
+  // modal opens, etc.) don't tear down and re-add the listener, which would
+  // cascade into a passive-effect update loop (#2015, #2047).
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+  const aboutOpenRef = useRef(aboutOpen);
+  aboutOpenRef.current = aboutOpen;
+  const jobsOpenRef = useRef(jobsOpen);
+  jobsOpenRef.current = jobsOpen;
+  const wdOpenRef = useRef(wdOpen);
+  wdOpenRef.current = wdOpen;
   const previousApprovalSnapshotRef = useRef<ApprovalSnapshot>({
     confirms: [],
     pathAccess: [],
@@ -1802,6 +1821,8 @@ function TabRuntime({
     },
     [sendRpc],
   );
+  const resolveConfirmRef = useRef(resolveConfirm);
+  resolveConfirmRef.current = resolveConfirm;
   const onApproveConfirm = useCallback(
     (id: number) => resolveConfirm(id, { type: "run_once" }),
     [resolveConfirm],
@@ -1821,6 +1842,8 @@ function TabRuntime({
     },
     [sendRpc],
   );
+  const resolvePathAccessRef = useRef(resolvePathAccess);
+  resolvePathAccessRef.current = resolvePathAccess;
   const resolveChoice = useCallback(
     (id: number, response: ChoiceVerdict) => {
       sendRpc({ cmd: "choice_response", id, response });
@@ -1935,16 +1958,16 @@ function TabRuntime({
         setWdOpen((v) => !v);
       } else if (mod && e.key === ",") {
         e.preventDefault();
-        if (settingsOpen) setSettingsOpen(false);
+        if (settingsOpenRef.current) setSettingsOpen(false);
         else openSettingsAt("general");
       } else if (mod && (e.key === "j" || e.key === "J")) {
         e.preventDefault();
         setJobsOpen((v) => !v);
-      } else if (e.key === "Escape" && state.busy) {
+      } else if (e.key === "Escape" && busyRef.current) {
         const target = e.target as HTMLElement | null;
         if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
         // A modal is open — let its own Esc handler close it (#1670).
-        if (settingsOpen || aboutOpen || jobsOpen || wdOpen) return;
+        if (settingsOpenRef.current || aboutOpenRef.current || jobsOpenRef.current || wdOpenRef.current) return;
         e.preventDefault();
         abort();
       } else if (e.key === "Enter" && !mod && !e.shiftKey && !e.altKey) {
@@ -1959,19 +1982,21 @@ function TabRuntime({
         ) {
           return;
         }
-        if (settingsOpen || aboutOpen || jobsOpen || wdOpen) return;
+        // Read from refs, not closure — avoids tearing down the listener on
+        // every state change that would cascade into a passive-effect loop.
+        if (settingsOpenRef.current || aboutOpenRef.current || jobsOpenRef.current || wdOpenRef.current) return;
         // Enter grants the pending authorization prompt (run once), matching the
         // TUI where Enter confirms the highlighted choice (#1962).
-        const confirm = state.pendingConfirms.at(-1);
+        const confirm = pendingConfirmsRef.current.at(-1);
         if (confirm) {
           e.preventDefault();
-          resolveConfirm(confirm.id, { type: "run_once" });
+          resolveConfirmRef.current(confirm.id, { type: "run_once" });
           return;
         }
-        const pathAccess = state.pendingPathAccess.at(-1);
+        const pathAccess = pendingPathAccessRef.current.at(-1);
         if (pathAccess) {
           e.preventDefault();
-          resolvePathAccess(pathAccess.id, { type: "run_once" });
+          resolvePathAccessRef.current(pathAccess.id, { type: "run_once" });
         }
       }
     };
@@ -1979,17 +2004,8 @@ function TabRuntime({
     return () => window.removeEventListener("keydown", onKey);
   }, [
     active,
-    state.busy,
-    state.pendingConfirms,
-    state.pendingPathAccess,
-    resolveConfirm,
-    resolvePathAccess,
     abort,
     newChat,
-    settingsOpen,
-    aboutOpen,
-    jobsOpen,
-    wdOpen,
     openSettingsAt,
   ]);
 
